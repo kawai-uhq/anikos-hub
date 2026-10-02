@@ -10,6 +10,7 @@ permissions:
 
 jobs:
   build:
+    name: Build and Release
     runs-on: ubuntu-latest
 
     steps:
@@ -26,14 +27,13 @@ jobs:
       - name: Make Gradle executable
         run: chmod +x gradlew
 
-      - name: Build APK
-        run: ./gradlew assembleRelease
+      - name: Build Debug APK
+        run: ./gradlew assembleDebug
 
-      - name: Rename APK
+      - name: Prepare APK
         run: |
           mkdir -p release
-          cp app/build/outputs/apk/release/app-release.apk \
-             release/Anikos-Hub.apk
+          cp app/build/outputs/apk/debug/app-debug.apk release/Anikos-Hub.apk
 
       - name: Create GitHub Release
         env:
