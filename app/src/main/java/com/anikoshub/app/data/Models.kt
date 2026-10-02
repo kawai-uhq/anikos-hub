@@ -69,8 +69,9 @@ object Providers {
         Provider(
             id = "vidfast",
             displayName = "VidFast",
-            movieUrl = { id -> "https://vidfast.pro/movie/$id" },
-            tvUrl = { id, s, e -> "https://vidfast.pro/tv/$id/$s/$e" }
+            // Domain moved: vidfast.pro → vidfast.vc
+            movieUrl = { id -> "https://vidfast.vc/movie/$id?autoPlay=true" },
+            tvUrl = { id, s, e -> "https://vidfast.vc/tv/$id/$s/$e?autoPlay=true" }
         )
     )
 
