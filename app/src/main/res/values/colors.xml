@@ -1,1 +1,4 @@
-<resources><color name="black">#08080A</color></resources>
+<resources>
+    <color name="black">#08080A</color>
+    <color name="launcher_icon_background">#071B63</color>
+</resources>
