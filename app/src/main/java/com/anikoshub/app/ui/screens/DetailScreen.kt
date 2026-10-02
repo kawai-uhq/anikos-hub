@@ -207,8 +207,9 @@ fun DetailScreen(
 
             error?.let {
                 Spacer(Modifier.height(12.dp))
-                ErrorBox(it) {
-                    error = null
+                ErrorBox(
+                     message = errMsg,
+                     onRetry = {
                     // re-trigger by resetting season load
                     scope.launch {
                         if (media.type == "tv") {
