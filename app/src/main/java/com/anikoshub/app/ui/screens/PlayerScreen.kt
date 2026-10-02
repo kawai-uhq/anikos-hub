@@ -56,7 +56,6 @@ fun PlayerScreen(
 
     // Allow landscape + immersive while playing
     DisposableEffect(Unit) {
-        activity?.requestedOrientation =
             android.content.pm.ActivityInfo.SCREEN_ORIENTATION_SENSOR
         activity?.window?.let { window ->
             WindowCompat.setDecorFitsSystemWindows(window, false)
@@ -67,7 +66,6 @@ fun PlayerScreen(
             }
         }
         onDispose {
-            activity?.requestedOrientation =
                 android.content.pm.ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
             activity?.window?.let { window ->
                 WindowCompat.setDecorFitsSystemWindows(window, true)
