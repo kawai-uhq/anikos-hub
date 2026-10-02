@@ -1511,6 +1511,8 @@ private fun PlayerScreen(
 private fun SettingsScreen(
     prefs: android.content.SharedPreferences
 ) {
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
 
     var token by remember {
         mutableStateOf(
@@ -1523,6 +1525,70 @@ private fun SettingsScreen(
 
     var saved by remember {
         mutableStateOf(false)
+    }
+
+    var checkingUpdate by remember {
+        mutableStateOf(false)
+    }
+
+    var updateMessage by remember {
+        mutableStateOf<String?>(null)
+    }
+
+    var updateUrl by remember {
+        mutableStateOf<String?>(null)
+    }
+
+    var currentVersion by remember {
+        mutableStateOf("Checking...")
+    }
+
+    LaunchedEffect(Unit) {
+        currentVersion =
+            try {
+                context.packageManager
+                    .getPackageInfo(
+                        context.packageName,
+                        0
+                    )
+                    .versionName
+                    ?: "Unknown"
+            } catch (_: Exception) {
+                "Unknown"
+            }
+    }
+
+    fun checkForUpdatesManually() {
+        scope.launch {
+            checkingUpdate = true
+            updateMessage = null
+            updateUrl = null
+
+            val installedVersion =
+                try {
+                    context.packageManager
+                        .getPackageInfo(
+                            context.packageName,
+                            0
+                        )
+                        .versionName
+                        ?: "0.0.0"
+                } catch (_: Exception) {
+                    "0.0.0"
+                }
+
+            val result =
+                checkForUpdate(installedVersion)
+
+            checkingUpdate = false
+
+            if (result != null) {
+                updateUrl = result
+            } else {
+                updateMessage =
+                    "You're using the latest available version."
+            }
+        }
     }
 
     Column {
@@ -1575,6 +1641,60 @@ private fun SettingsScreen(
             )
         }
 
+        Spacer(Modifier.height(24.dp))
+
+        HorizontalDivider()
+
+        Spacer(Modifier.height(20.dp))
+
+        Text(
+            "App Updates",
+            fontSize = 20.sp,
+            fontWeight = FontWeight.Bold
+        )
+
+        Spacer(Modifier.height(6.dp))
+
+        Text(
+            "Current version: $currentVersion",
+            color = Color.Gray,
+            fontSize = 13.sp
+        )
+
+        Spacer(Modifier.height(10.dp))
+
+        Button(
+            onClick = {
+                checkForUpdatesManually()
+            },
+            enabled = !checkingUpdate,
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Text(
+                if (checkingUpdate) {
+                    "Checking for updates..."
+                } else {
+                    "Check for updates"
+                }
+            )
+        }
+
+        if (checkingUpdate) {
+            Spacer(Modifier.height(10.dp))
+            LinearProgressIndicator(
+                modifier = Modifier.fillMaxWidth()
+            )
+        }
+
+        if (updateMessage != null) {
+            Spacer(Modifier.height(10.dp))
+            Text(
+                updateMessage!!,
+                color = Color.LightGray,
+                fontSize = 13.sp
+            )
+        }
+
         Spacer(Modifier.height(20.dp))
 
         Text(
@@ -1593,6 +1713,56 @@ private fun SettingsScreen(
                 "embed/player URLs.",
             color = Color.Gray,
             fontSize = 13.sp
+        )
+    }
+
+    if (updateUrl != null) {
+        AlertDialog(
+            onDismissRequest = {
+                updateUrl = null
+            },
+            title = {
+                Text("Update available")
+            },
+            text = {
+                Text(
+                    "A newer version of Aniko's Hub is available. " +
+                        "Download the latest APK?"
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        try {
+                            context.startActivity(
+                                Intent(
+                                    Intent.ACTION_VIEW,
+                                    Uri.parse(updateUrl)
+                                )
+                            )
+                        } catch (_: Exception) {
+                            Toast.makeText(
+                                context,
+                                "Unable to open the APK download.",
+                                Toast.LENGTH_LONG
+                            ).show()
+                        }
+
+                        updateUrl = null
+                    }
+                ) {
+                    Text("DOWNLOAD")
+                }
+            },
+            dismissButton = {
+                TextButton(
+                    onClick = {
+                        updateUrl = null
+                    }
+                ) {
+                    Text("LATER")
+                }
+            }
         )
     }
 }
