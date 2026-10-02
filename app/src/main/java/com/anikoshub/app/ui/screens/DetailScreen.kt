@@ -206,27 +206,26 @@ fun DetailScreen(
             }
 
             error?.let { errMsg ->
-    Spacer(Modifier.height(12.dp))
-    ErrorBox(
-        message = errMsg,
-        onRetry = {
-            error = null
-            scope.launch {
-                if (media.type == "tv") {
-                    loadingSeasons = true
-                    runCatching { client.tvSeasons(media.id) }
-                        .onSuccess {
-                            seasons = it
-                            if (it.isNotEmpty()) selectedSeason = it.first().number
+                Spacer(Modifier.height(12.dp))
+                ErrorBox(
+                    message = errMsg,
+                    onRetry = {
+                        error = null
+                        scope.launch {
+                            if (media.type == "tv") {
+                                loadingSeasons = true
+                                runCatching { client.tvSeasons(media.id) }
+                                    .onSuccess {
+                                        seasons = it
+                                        if (it.isNotEmpty()) selectedSeason = it.first().number
+                                    }
+                                    .onFailure { e -> error = e.message }
+                                loadingSeasons = false
+                            }
                         }
-                        .onFailure { e -> error = e.message }
-                    loadingSeasons = false
-                }
-            }
-            Unit
-        }
-    )
-}
+                        Unit
+                    }
+                )
             }
         }
     }
