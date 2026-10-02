@@ -1,12 +1,5 @@
 package com.anikoshub.app
 
-import android.app.AlertDialog
-import android.os.Build
-import android.widget.Toast
-import androidx.compose.ui.platform.LocalContext
-import kotlinx.coroutines.launch
-import org.json.JSONObject
-import java.net.HttpURLConnection
 import android.annotation.SuppressLint
 import android.content.Intent
 import android.net.Uri
@@ -37,6 +30,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -122,7 +116,6 @@ class TmdbClient(
             conn.requestMethod = "GET"
             conn.setRequestProperty("Authorization", "Bearer $token")
             conn.setRequestProperty("accept", "application/json")
-
             conn.connectTimeout = 15000
             conn.readTimeout = 20000
 
@@ -139,6 +132,8 @@ class TmdbClient(
                 it.readText()
             }
 
+            conn.disconnect()
+
             if (responseCode !in 200..299) {
                 error("TMDB $responseCode: $body")
             }
@@ -147,14 +142,10 @@ class TmdbClient(
         }
 
     suspend fun popular(type: String): List<Media> =
-        get(
-            "/$type/popular?language=en-US&page=1"
-        ).toMedia(type)
+        get("/$type/popular?language=en-US&page=1").toMedia(type)
 
     suspend fun trending(): List<Media> =
-        get(
-            "/trending/all/day?language=en-US"
-        ).toMedia("all")
+        get("/trending/all/day?language=en-US").toMedia("all")
 
     suspend fun search(q: String): List<Media> =
         get(
@@ -163,48 +154,33 @@ class TmdbClient(
             }&include_adult=false&language=en-US&page=1"
         ).toMedia("all")
 
-    suspend fun detail(
-        id: Int,
-        type: String
-    ): Media? =
-        get(
-            "/$type/$id?language=en-US"
-        ).toMedia(type).firstOrNull()
-
     suspend fun tvSeasons(id: Int): List<TvSeason> {
+        val json = get("/tv/$id?language=en-US")
+        val seasons = json.optJSONArray("seasons")
+            ?: return emptyList()
 
-        val json =
-            get("/tv/$id?language=en-US")
+        return (0 until seasons.length()).mapNotNull { index ->
+            val season = seasons.optJSONObject(index)
+                ?: return@mapNotNull null
 
-        val seasons =
-            json.optJSONArray("seasons")
-                ?: return emptyList()
+            val number = season.optInt("season_number", -1)
 
-        return (0 until seasons.length())
-            .mapNotNull { index ->
-
-                val s = seasons.optJSONObject(index)
-                    ?: return@mapNotNull null
-
-                val number =
-                    s.optInt("season_number", -1)
-
-                if (number <= 0) {
-                    return@mapNotNull null
-                }
-
-                TvSeason(
-                    number = number,
-                    name = s.optString(
-                        "name",
-                        "Season $number"
-                    ),
-                    episodeCount = s.optInt(
-                        "episode_count",
-                        0
-                    )
-                )
+            if (number <= 0) {
+                return@mapNotNull null
             }
+
+            TvSeason(
+                number = number,
+                name = season.optString(
+                    "name",
+                    "Season $number"
+                ),
+                episodeCount = season.optInt(
+                    "episode_count",
+                    0
+                )
+            )
+        }
     }
 
     suspend fun episodes(
@@ -213,55 +189,49 @@ class TmdbClient(
     ): List<Episode> {
 
         val json =
-            get(
-                "/tv/$id/season/$season?language=en-US"
-            )
+            get("/tv/$id/season/$season?language=en-US")
 
         val array =
             json.optJSONArray("episodes")
                 ?: return emptyList()
 
-        return (0 until array.length())
-            .mapNotNull { index ->
+        return (0 until array.length()).mapNotNull { index ->
+            val e = array.optJSONObject(index)
+                ?: return@mapNotNull null
 
-                val e =
-                    array.optJSONObject(index)
-                        ?: return@mapNotNull null
-
-                Episode(
-                    number = e.optInt(
-                        "episode_number",
-                        index + 1
-                    ),
-                    name = e.optString(
-                        "name",
-                        "Episode ${index + 1}"
-                    ),
-                    overview = e.optString(
-                        "overview",
-                        ""
-                    ),
-                    still = e.optString(
-                        "still_path"
-                    ).ifBlank { null },
-                    rating = e.optDouble(
-                        "vote_average",
-                        0.0
-                    ),
-                    runtime = e.optInt(
-                        "runtime",
-                        0
-                    )
+            Episode(
+                number = e.optInt(
+                    "episode_number",
+                    index + 1
+                ),
+                name = e.optString(
+                    "name",
+                    "Episode ${index + 1}"
+                ),
+                overview = e.optString(
+                    "overview",
+                    ""
+                ),
+                still = e.optString(
+                    "still_path"
+                ).ifBlank { null },
+                rating = e.optDouble(
+                    "vote_average",
+                    0.0
+                ),
+                runtime = e.optInt(
+                    "runtime",
+                    0
                 )
-            }
+            )
+        }
     }
 
     private fun JSONObject.toMedia(
         fallback: String
     ): List<Media> {
 
-        val array =
-            optJSONArray("results")
+        val array = optJSONArray("results")
 
         if (array == null) {
             return listOfNotNull(
@@ -269,13 +239,12 @@ class TmdbClient(
             )
         }
 
-        return (0 until array.length())
-            .mapNotNull {
-                parseMedia(
-                    array.optJSONObject(it),
-                    fallback
-                )
-            }
+        return (0 until array.length()).mapNotNull {
+            parseMedia(
+                array.optJSONObject(it),
+                fallback
+            )
+        }
     }
 
     private fun parseMedia(
@@ -293,26 +262,24 @@ class TmdbClient(
                 fallback
             }
 
-        if (type !in listOf("movie", "tv")) {
+        if (type != "movie" && type != "tv") {
             return null
         }
 
         val title =
             o.optString(
-                if (type == "movie")
-                    "title"
-                else
-                    "name"
+                if (type == "movie") "title" else "name"
             ).ifBlank {
                 "Untitled"
             }
 
         val date =
             o.optString(
-                if (type == "movie")
+                if (type == "movie") {
                     "release_date"
-                else
+                } else {
                     "first_air_date"
+                }
             )
 
         return Media(
@@ -336,31 +303,17 @@ class TmdbClient(
 }
 
 @Composable
-fun AnikosHubApp(
+private fun AnikosHubApp(
     client: TmdbClient,
     prefs: android.content.SharedPreferences
 ) {
 
-    var tab by remember {
-        mutableIntStateOf(0)
-    }
-
-    var selected by remember {
-        mutableStateOf<Media?>(null)
-    }
-
+    var tab by remember { mutableIntStateOf(0) }
+    var selected by remember { mutableStateOf<Media?>(null) }
     var player by remember {
         mutableStateOf<
-            Triple<
-                Media,
-                String,
-                Pair<Int, Int>?
-            >?
+            Triple<Media, String, Pair<Int, Int>?>?
         >(null)
-    }
-
-    var reload by remember {
-        mutableIntStateOf(0)
     }
 
     MaterialTheme(
@@ -371,44 +324,39 @@ fun AnikosHubApp(
         )
     ) {
 
-        if (player != null) {
+        when {
+            player != null -> {
+                PlayerScreen(
+                    player = player!!,
+                    onBack = { player = null }
+                )
+            }
 
-            PlayerScreen(
-                player!!,
-                onBack = {
-                    player = null
-                }
-            )
+            selected != null -> {
+                DetailScreen(
+                    media = selected!!,
+                    client = client,
+                    onBack = { selected = null },
+                    onPlay = { media, provider, episode ->
+                        player =
+                            Triple(
+                                media,
+                                provider,
+                                episode
+                            )
+                    }
+                )
+            }
 
-        } else if (selected != null) {
-
-            DetailScreen(
-                selected!!,
-                client,
-                prefs,
-                onBack = {
-                    selected = null
-                },
-                onPlay = { media, provider, ep ->
-                    player =
-                        Triple(
-                            media,
-                            provider,
-                            ep
-                        )
-                }
-            )
-
-        } else {
-
-            MainScreen(
-                client,
-                prefs,
-                tab,
-                { tab = it },
-                { selected = it },
-                reload
-            )
+            else -> {
+                MainScreen(
+                    client = client,
+                    prefs = prefs,
+                    tab = tab,
+                    setTab = { tab = it },
+                    open = { selected = it }
+                )
+            }
         }
     }
 }
@@ -419,15 +367,14 @@ private fun MainScreen(
     prefs: android.content.SharedPreferences,
     tab: Int,
     setTab: (Int) -> Unit,
-    open: (Media) -> Unit,
-    reload: Int
+    open: (Media) -> Unit
 ) {
 
     var query by remember {
         mutableStateOf("")
     }
 
-    var items by remember {
+    var trending by remember {
         mutableStateOf<List<Media>>(emptyList())
     }
 
@@ -435,36 +382,20 @@ private fun MainScreen(
         mutableStateOf<List<Media>>(emptyList())
     }
 
-    var movies by remember {
-        mutableStateOf<List<Media>>(emptyList())
-    }
-
     var error by remember {
         mutableStateOf<String?>(null)
     }
 
-    LaunchedEffect(tab, reload) {
-
-        if (tab == 0 && items.isEmpty()) {
-
-            runCatching {
-                items = client.trending()
-            }.onFailure {
-                error = it.message
-            }
+    LaunchedEffect(Unit) {
+        runCatching {
+            trending = client.trending()
+        }.onFailure {
+            error = it.message
         }
+    }
 
-        if (tab == 1 && query.isBlank()) {
-
-            runCatching {
-                movies = client.popular("movie")
-            }.onFailure {
-                error = it.message
-            }
-        }
-
-        if (tab == 2) {
-
+    LaunchedEffect(tab) {
+        if (tab == 2 && tv.isEmpty()) {
             runCatching {
                 tv = client.popular("tv")
             }.onFailure {
@@ -475,49 +406,43 @@ private fun MainScreen(
 
     Scaffold(
         bottomBar = {
-
             NavigationBar(
                 containerColor = Bg
             ) {
-
                 listOf(
                     "⌂" to "Home",
                     "⌕" to "Search",
                     "▣" to "Shows",
                     "⚙" to "Settings"
-                ).forEachIndexed { i, p ->
+                ).forEachIndexed { index, item ->
 
                     NavigationBarItem(
-                        selected = tab == i,
-                        onClick = {
-                            setTab(i)
-                        },
+                        selected = tab == index,
+                        onClick = { setTab(index) },
                         icon = {
                             Text(
-                                p.first,
+                                item.first,
                                 fontSize = 20.sp
                             )
                         },
                         label = {
-                            Text(p.second)
+                            Text(item.second)
                         }
                     )
                 }
             }
         },
         containerColor = Bg
-    ) { pad ->
+    ) { padding ->
 
         Column(
             Modifier
                 .fillMaxSize()
-                .padding(pad)
+                .padding(padding)
                 .padding(horizontal = 16.dp)
         ) {
 
-            Spacer(
-                Modifier.height(14.dp)
-            )
+            Spacer(Modifier.height(14.dp))
 
             Text(
                 "ANIKO'S HUB",
@@ -526,61 +451,63 @@ private fun MainScreen(
                 fontWeight = FontWeight.Bold
             )
 
-            Spacer(
-                Modifier.height(12.dp)
-            )
+            Spacer(Modifier.height(12.dp))
 
-            if (tab == 3) {
+            when (tab) {
 
-                SettingsScreen(prefs)
+                1 -> {
+                    OutlinedTextField(
+                        value = query,
+                        onValueChange = {
+                            query = it
+                        },
+                        modifier = Modifier.fillMaxWidth(),
+                        placeholder = {
+                            Text("Search movies & shows")
+                        },
+                        singleLine = true
+                    )
 
-            } else if (tab == 1) {
+                    Spacer(Modifier.height(12.dp))
 
-                OutlinedTextField(
-                    value = query,
-                    onValueChange = {
-                        query = it
-                    },
-                    modifier = Modifier.fillMaxWidth(),
-                    placeholder = {
-                        Text("Search movies & shows")
-                    },
-                    singleLine = true
-                )
-
-                Spacer(
-                    Modifier.height(12.dp)
-                )
-
-                SearchResults(
-                    client,
-                    query,
-                    open
-                )
-
-            } else {
-
-                if (error != null) {
-                    Text(
-                        error!!,
-                        color = Color.Red
+                    SearchResults(
+                        client = client,
+                        query = query,
+                        open = open
                     )
                 }
 
-                if (tab == 0) {
+                2 -> {
+                    if (error != null) {
+                        Text(
+                            error!!,
+                            color = Color.Red
+                        )
+                    }
 
                     MediaSection(
-                        "Trending",
-                        items,
-                        open
+                        title = "Popular TV",
+                        list = tv,
+                        open = open
                     )
+                }
 
-                } else if (tab == 2) {
+                3 -> {
+                    SettingsScreen(prefs)
+                }
+
+                else -> {
+                    if (error != null) {
+                        Text(
+                            error!!,
+                            color = Color.Red
+                        )
+                    }
 
                     MediaSection(
-                        "Popular TV",
-                        tv,
-                        open
+                        title = "Trending",
+                        list = trending,
+                        open = open
                     )
                 }
             }
@@ -591,7 +518,7 @@ private fun MainScreen(
 @Composable
 private fun SearchResults(
     client: TmdbClient,
-    q: String,
+    query: String,
     open: (Media) -> Unit
 ) {
 
@@ -603,32 +530,29 @@ private fun SearchResults(
         mutableStateOf(false)
     }
 
-    LaunchedEffect(q) {
-
-        if (q.length >= 2) {
-
+    LaunchedEffect(query) {
+        if (query.length >= 2) {
             loading = true
 
             results =
                 runCatching {
-                    client.search(q)
+                    client.search(query)
                 }.getOrDefault(emptyList())
 
             loading = false
-
         } else {
-
             results = emptyList()
         }
     }
 
     if (loading) {
         CircularProgressIndicator()
+        Spacer(Modifier.height(10.dp))
     }
 
     MediaGrid(
-        results,
-        open
+        list = results,
+        open = open
     )
 }
 
@@ -645,15 +569,12 @@ private fun MediaSection(
         fontWeight = FontWeight.Bold
     )
 
-    Spacer(
-        Modifier.height(10.dp)
-    )
+    Spacer(Modifier.height(10.dp))
 
     LazyRow(
         horizontalArrangement =
             Arrangement.spacedBy(10.dp)
     ) {
-
         items(list) {
             Poster(it, open)
         }
@@ -666,13 +587,14 @@ private fun MediaGrid(
     open: (Media) -> Unit
 ) {
 
-    Column(
-        Modifier.verticalScroll(
-            rememberScrollState()
-        )
+    LazyColumn(
+        verticalArrangement =
+            Arrangement.spacedBy(12.dp)
     ) {
 
-        list.chunked(2).forEach { row ->
+        items(
+            list.chunked(2)
+        ) { row ->
 
             Row(
                 Modifier.fillMaxWidth(),
@@ -681,7 +603,6 @@ private fun MediaGrid(
             ) {
 
                 row.forEach {
-
                     Poster(
                         it,
                         open,
@@ -695,55 +616,64 @@ private fun MediaGrid(
                     )
                 }
             }
-
-            Spacer(
-                Modifier.height(12.dp)
-            )
         }
     }
 }
 
 @Composable
 private fun Poster(
-    m: Media,
+    media: Media,
     open: (Media) -> Unit,
-    mod: Modifier = Modifier
+    modifier: Modifier = Modifier
 ) {
 
     Column(
-        mod.clickable {
-            open(m)
+        modifier.clickable {
+            open(media)
         }
     ) {
 
         val image =
-            m.poster ?: m.backdrop
+            media.poster ?: media.backdrop
 
         if (image != null) {
 
             AsyncImage(
                 model = IMAGE + image,
-                contentDescription = m.title,
+                contentDescription = media.title,
                 modifier = Modifier
                     .fillMaxWidth()
                     .height(245.dp),
                 contentScale = ContentScale.Crop
             )
+        } else {
+
+            Box(
+                Modifier
+                    .fillMaxWidth()
+                    .height(245.dp)
+                    .background(Color(0xFF222228)),
+                contentAlignment =
+                    Alignment.Center
+            ) {
+                Text(
+                    "No image",
+                    color = Color.Gray
+                )
+            }
         }
 
-        Spacer(
-            Modifier.height(5.dp)
-        )
+        Spacer(Modifier.height(5.dp))
 
         Text(
-            m.title,
+            media.title,
             maxLines = 1,
             fontWeight = FontWeight.SemiBold
         )
 
         Text(
-            "${m.year} ★ ${
-                "%.1f".format(m.rating)
+            "${media.year} • ★ ${
+                "%.1f".format(media.rating)
             }",
             fontSize = 12.sp,
             color = Color.Gray
@@ -753,9 +683,8 @@ private fun Poster(
 
 @Composable
 private fun DetailScreen(
-    m: Media,
+    media: Media,
     client: TmdbClient,
-    prefs: android.content.SharedPreferences,
     onBack: () -> Unit,
     onPlay: (
         Media,
@@ -780,10 +709,6 @@ private fun DetailScreen(
         mutableIntStateOf(1)
     }
 
-    var selectedEpisode by remember {
-        mutableIntStateOf(1)
-    }
-
     var loadingSeasons by remember {
         mutableStateOf(false)
     }
@@ -796,16 +721,15 @@ private fun DetailScreen(
         mutableStateOf<String?>(null)
     }
 
-    LaunchedEffect(m.id, m.type) {
+    LaunchedEffect(media.id, media.type) {
 
-        if (m.type == "tv") {
+        if (media.type == "tv") {
 
             loadingSeasons = true
 
             runCatching {
-
                 val loaded =
-                    client.tvSeasons(m.id)
+                    client.tvSeasons(media.id)
 
                 seasons = loaded
 
@@ -813,9 +737,7 @@ private fun DetailScreen(
                     selectedSeason =
                         loaded.first().number
                 }
-
             }.onFailure {
-
                 error = it.message
             }
 
@@ -824,32 +746,24 @@ private fun DetailScreen(
     }
 
     LaunchedEffect(
-        m.id,
+        media.id,
         selectedSeason
     ) {
 
         if (
-            m.type == "tv" &&
+            media.type == "tv" &&
             selectedSeason > 0
         ) {
 
             loadingEpisodes = true
 
             runCatching {
-
                 episodes =
                     client.episodes(
-                        m.id,
+                        media.id,
                         selectedSeason
                     )
-
-                if (episodes.isNotEmpty()) {
-                    selectedEpisode =
-                        episodes.first().number
-                }
-
             }.onFailure {
-
                 error = it.message
             }
 
@@ -869,7 +783,7 @@ private fun DetailScreen(
         Box {
 
             val backdrop =
-                m.backdrop ?: m.poster
+                media.backdrop ?: media.poster
 
             if (backdrop != null) {
 
@@ -889,83 +803,615 @@ private fun DetailScreen(
                 color = Color.White,
                 modifier = Modifier
                     .padding(12.dp)
-                    .clickable {
-                        onBack()
-                    }
+                    .clickable(onClick = onBack)
             )
         }
 
-        Column
-
-        suspend fun checkForUpdate(
-    currentVersion: String
-): String? = withContext(Dispatchers.IO) {
-
-    try {
-
-        val url = URL(
-            "https://api.github.com/repos/" +
-            "kawai-uhq/anikos-hub/releases/latest"
-        )
-
-        val connection =
-            url.openConnection() as HttpURLConnection
-
-        connection.requestMethod = "GET"
-
-        connection.setRequestProperty(
-            "Accept",
-            "application/vnd.github+json"
-        )
-
-        connection.connectTimeout = 10000
-        connection.readTimeout = 10000
-
-        if (connection.responseCode !in 200..299) {
-            return@withContext null
-        }
-
-        val body =
-            connection.inputStream
-                .bufferedReader()
-                .use {
-                    it.readText()
-                }
-
-        val json = JSONObject(body)
-
-        val latestTag =
-            json.optString("tag_name")
-
-        val latestVersion =
-            latestTag.removePrefix("v")
-
-        if (
-            latestVersion.isNotBlank() &&
-            latestVersion != currentVersion
+        Column(
+            Modifier.padding(16.dp)
         ) {
 
-            val assets =
-                json.optJSONArray("assets")
+            Text(
+                media.title,
+                fontSize = 27.sp,
+                fontWeight = FontWeight.Bold
+            )
 
-            if (
-                assets != null &&
-                assets.length() > 0
+            Text(
+                "${media.year} • ${
+                    media.type.uppercase()
+                } • ★ ${
+                    "%.1f".format(media.rating)
+                }",
+                color = Color.Gray
+            )
+
+            Spacer(Modifier.height(12.dp))
+
+            Text(
+                media.overview.ifBlank {
+                    "No description available."
+                },
+                color = Color.LightGray
+            )
+
+            Spacer(Modifier.height(20.dp))
+
+            Text(
+                "SERVER",
+                fontWeight = FontWeight.Bold
+            )
+
+            Spacer(Modifier.height(8.dp))
+
+            Row(
+                Modifier.horizontalScroll(
+                    rememberScrollState()
+                )
             ) {
 
-                val asset =
-                    assets.getJSONObject(0)
+                listOf(
+                    "vidlink",
+                    "cinesrc",
+                    "vidfast"
+                ).forEach { name ->
 
-                return@withContext asset.optString(
-                    "browser_download_url"
+                    FilterChip(
+                        selected =
+                            provider == name,
+                        onClick = {
+                            provider = name
+                        },
+                        label = {
+                            Text(name.uppercase())
+                        }
+                    )
+
+                    Spacer(Modifier.width(8.dp))
+                }
+            }
+
+            if (media.type == "tv") {
+
+                Spacer(Modifier.height(20.dp))
+
+                Text(
+                    "SEASONS",
+                    fontWeight = FontWeight.Bold
+                )
+
+                Spacer(Modifier.height(8.dp))
+
+                if (loadingSeasons) {
+
+                    CircularProgressIndicator()
+
+                } else if (seasons.isEmpty()) {
+
+                    Text(
+                        "No season information found.",
+                        color = Color.Gray
+                    )
+
+                } else {
+
+                    LazyRow(
+                        horizontalArrangement =
+                            Arrangement.spacedBy(8.dp)
+                    ) {
+
+                        items(seasons) { season ->
+
+                            FilterChip(
+                                selected =
+                                    selectedSeason ==
+                                            season.number,
+                                onClick = {
+                                    selectedSeason =
+                                        season.number
+                                },
+                                label = {
+                                    Text(
+                                        "Season ${season.number}"
+                                    )
+                                }
+                            )
+                        }
+                    }
+
+                    Spacer(Modifier.height(16.dp))
+
+                    val currentSeason =
+                        seasons.firstOrNull {
+                            it.number ==
+                                    selectedSeason
+                        }
+
+                    Text(
+                        "${
+                            currentSeason?.name
+                                ?: "Season $selectedSeason"
+                        } • ${
+                            currentSeason?.episodeCount
+                                ?: episodes.size
+                        } episodes",
+                        fontSize = 19.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+
+                    Spacer(Modifier.height(10.dp))
+
+                    if (loadingEpisodes) {
+
+                        CircularProgressIndicator()
+
+                    } else if (episodes.isEmpty()) {
+
+                        Text(
+                            "No episodes found.",
+                            color = Color.Gray
+                        )
+
+                    } else {
+
+                        episodes.forEach { episode ->
+
+                            EpisodeCard(
+                                episode = episode,
+                                onPlay = {
+                                    onPlay(
+                                        media,
+                                        provider,
+                                        Pair(
+                                            selectedSeason,
+                                            episode.number
+                                        )
+                                    )
+                                }
+                            )
+
+                            Spacer(
+                                Modifier.height(10.dp)
+                            )
+                        }
+                    }
+                }
+
+            } else {
+
+                Spacer(Modifier.height(20.dp))
+
+                Button(
+                    onClick = {
+                        onPlay(
+                            media,
+                            provider,
+                            null
+                        )
+                    },
+                    modifier =
+                        Modifier.fillMaxWidth()
+                ) {
+                    Text("▶ WATCH NOW")
+                }
+            }
+
+            if (error != null) {
+
+                Spacer(Modifier.height(12.dp))
+
+                Text(
+                    error!!,
+                    color = Color.Red
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun EpisodeCard(
+    episode: Episode,
+    onPlay: () -> Unit
+) {
+
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(
+            containerColor = Card
+        ),
+        shape = RoundedCornerShape(12.dp)
+    ) {
+
+        Row(
+            Modifier.padding(10.dp),
+            verticalAlignment =
+                Alignment.CenterVertically
+        ) {
+
+            if (episode.still != null) {
+
+                AsyncImage(
+                    model = IMAGE + episode.still,
+                    contentDescription =
+                        episode.name,
+                    modifier = Modifier
+                        .width(130.dp)
+                        .height(75.dp),
+                    contentScale =
+                        ContentScale.Crop
+                )
+
+            } else {
+
+                Box(
+                    Modifier
+                        .width(130.dp)
+                        .height(75.dp)
+                        .background(
+                            Color(0xFF222228)
+                        ),
+                    contentAlignment =
+                        Alignment.Center
+                ) {
+                    Text(
+                        "EP ${episode.number}",
+                        color = Color.Gray
+                    )
+                }
+            }
+
+            Spacer(Modifier.width(12.dp))
+
+            Column(
+                Modifier.weight(1f)
+            ) {
+
+                Text(
+                    "E${episode.number} • ${episode.name}",
+                    fontWeight = FontWeight.Bold,
+                    maxLines = 2
+                )
+
+                if (episode.runtime > 0) {
+
+                    Text(
+                        "${episode.runtime} min • ★ ${
+                            "%.1f".format(
+                                episode.rating
+                            )
+                        }",
+                        fontSize = 12.sp,
+                        color = Color.Gray
+                    )
+                }
+
+                if (episode.overview.isNotBlank()) {
+
+                    Spacer(Modifier.height(3.dp))
+
+                    Text(
+                        episode.overview,
+                        fontSize = 12.sp,
+                        color = Color.LightGray,
+                        maxLines = 3
+                    )
+                }
+            }
+
+            Spacer(Modifier.width(6.dp))
+
+            Button(
+                onClick = onPlay,
+                contentPadding =
+                    PaddingValues(
+                        horizontal = 12.dp
+                    )
+            ) {
+                Text("▶")
+            }
+        }
+    }
+}
+
+@SuppressLint("SetJavaScriptEnabled")
+@Composable
+private fun PlayerScreen(
+    player: Triple<
+        Media,
+        String,
+        Pair<Int, Int>?
+    >,
+    onBack: () -> Unit
+) {
+
+    val media = player.first
+    val provider = player.second
+    val episode = player.third
+
+    val context = LocalContext.current
+
+    val url = when (provider) {
+
+        "cinesrc" -> {
+            if (media.type == "movie") {
+                "https://cinesrc.st/embed/movie/${media.id}"
+            } else {
+                "https://cinesrc.st/embed/tv/${media.id}" +
+                    "?s=${episode!!.first}&e=${episode.second}"
+            }
+        }
+
+        "vidfast" -> {
+            if (media.type == "movie") {
+                "https://vidfast.pro/movie/${media.id}"
+            } else {
+                "https://vidfast.pro/tv/${media.id}" +
+                    "/${episode!!.first}/${episode.second}"
+            }
+        }
+
+        else -> {
+            if (media.type == "movie") {
+                "https://vidlink.pro/movie/${media.id}"
+            } else {
+                "https://vidlink.pro/tv/${media.id}" +
+                    "/${episode!!.first}/${episode.second}"
+            }
+        }
+    }
+
+    var pageError by remember {
+        mutableStateOf<String?>(null)
+    }
+
+    var webViewRef by remember {
+        mutableStateOf<WebView?>(null)
+    }
+
+    Column(
+        Modifier
+            .fillMaxSize()
+            .background(Color.Black)
+    ) {
+
+        Row(
+            Modifier
+                .fillMaxWidth()
+                .background(Color(0xFF101014))
+                .padding(6.dp),
+            verticalAlignment =
+                Alignment.CenterVertically
+        ) {
+
+            Text(
+                "‹",
+                fontSize = 36.sp,
+                color = Color.White,
+                modifier = Modifier
+                    .clickable(onClick = onBack)
+                    .padding(horizontal = 8.dp)
+            )
+
+            Text(
+                media.title,
+                color = Color.White,
+                fontWeight = FontWeight.Bold,
+                modifier = Modifier.weight(1f),
+                maxLines = 1
+            )
+
+            TextButton(
+                onClick = {
+                    webViewRef?.reload()
+                }
+            ) {
+                Text(
+                    "Reload",
+                    color = Purple
+                )
+            }
+
+            TextButton(
+                onClick = {
+                    context.startActivity(
+                        Intent(
+                            Intent.ACTION_VIEW,
+                            Uri.parse(url)
+                        )
+                    )
+                }
+            ) {
+                Text(
+                    "Browser",
+                    color = Purple
                 )
             }
         }
 
-        null
+        if (pageError != null) {
 
-    } catch (e: Exception) {
-
-        null
-    }
+            Text(
+                pageError!!,
+                color = Color.Red,
+                modifier = Modifier.padding(10.dp)
+            )
         }
+
+        AndroidView(
+            factory = { ctx ->
+
+                WebView(ctx).apply {
+
+                    webViewRef = this
+
+                    setBackgroundColor(
+                        android.graphics.Color.BLACK
+                    )
+
+                    settings.apply {
+
+                        javaScriptEnabled = true
+                        domStorageEnabled = true
+                        databaseEnabled = true
+
+                        mediaPlaybackRequiresUserGesture =
+                            false
+
+                        javaScriptCanOpenWindowsAutomatically =
+                            true
+
+                        setSupportMultipleWindows(true)
+
+                        allowFileAccess = true
+                        allowContentAccess = true
+
+                        mixedContentMode =
+                            WebSettings.MIXED_CONTENT_COMPATIBILITY_MODE
+
+                        userAgentString =
+                            "Mozilla/5.0 (Linux; Android 14; Mobile) " +
+                            "AppleWebKit/537.36 (KHTML, like Gecko) " +
+                            "Chrome/140.0.0.0 Mobile Safari/537.36"
+                    }
+
+                    val cookies =
+                        CookieManager.getInstance()
+
+                    cookies.setAcceptCookie(true)
+
+                    cookies.setAcceptThirdPartyCookies(
+                        this,
+                        true
+                    )
+
+                    webChromeClient =
+                        WebChromeClient()
+
+                    webViewClient =
+                        object : WebViewClient() {
+
+                            override fun shouldOverrideUrlLoading(
+                                view: WebView,
+                                request: WebResourceRequest
+                            ): Boolean {
+                                return false
+                            }
+
+                            override fun onReceivedError(
+                                view: WebView,
+                                request: WebResourceRequest,
+                                error: WebResourceError
+                            ) {
+
+                                if (request.isForMainFrame) {
+                                    pageError =
+                                        "Player failed to load: " +
+                                            error.description
+                                }
+                            }
+                        }
+
+                    loadUrl(url)
+                }
+
+            },
+            update = {
+                webViewRef = it
+            },
+            modifier = Modifier
+                .fillMaxWidth()
+                .weight(1f)
+        )
+    }
+}
+
+@Composable
+private fun SettingsScreen(
+    prefs: android.content.SharedPreferences
+) {
+
+    var token by remember {
+        mutableStateOf(
+            prefs.getString(
+                "tmdb_token",
+                ""
+            ) ?: ""
+        )
+    }
+
+    var saved by remember {
+        mutableStateOf(false)
+    }
+
+    Column {
+
+        Text(
+            "Settings",
+            fontSize = 25.sp,
+            fontWeight = FontWeight.Bold
+        )
+
+        Spacer(Modifier.height(15.dp))
+
+        Text(
+            "TMDB API Read Access Token",
+            fontWeight = FontWeight.Bold
+        )
+
+        Spacer(Modifier.height(6.dp))
+
+        OutlinedTextField(
+            value = token,
+            onValueChange = {
+                token = it
+                saved = false
+            },
+            modifier = Modifier.fillMaxWidth(),
+            singleLine = false
+        )
+
+        Spacer(Modifier.height(10.dp))
+
+        Button(
+            onClick = {
+                prefs.edit()
+                    .putString(
+                        "tmdb_token",
+                        token.trim()
+                    )
+                    .apply()
+
+                saved = true
+            }
+        ) {
+            Text(
+                if (saved) {
+                    "Saved ✓"
+                } else {
+                    "Save token"
+                }
+            )
+        }
+
+        Spacer(Modifier.height(20.dp))
+
+        Text(
+            """
+            This app uses TMDB for movie and TV metadata.
+            Add your own TMDB API Read Access Token before loading the catalog.
+            """.trimIndent(),
+            color = Color.Gray,
+            fontSize = 13.sp
+        )
+
+        Spacer(Modifier.height(8.dp))
+
+        Text(
+            "Playback providers are opened through their documented " +
+                "embed/player URLs.",
+            color = Color.Gray,
+            fontSize = 13.sp
+        )
+    }
+}
