@@ -11,6 +11,7 @@ import android.webkit.CookieManager
 import android.webkit.WebChromeClient
 import android.webkit.WebResourceError
 import android.webkit.WebResourceRequest
+import android.webkit.WebResourceResponse
 import android.webkit.WebSettings
 import android.webkit.WebView
 import android.webkit.WebViewClient
@@ -40,6 +41,7 @@ import androidx.core.view.WindowInsetsControllerCompat
 import com.anikoshub.app.data.Media
 import com.anikoshub.app.data.Providers
 import com.anikoshub.app.ui.theme.Purple
+import com.anikoshub.app.util.AdBlocker
 import kotlinx.coroutines.delay
 
 @SuppressLint("SetJavaScriptEnabled")
@@ -59,6 +61,26 @@ fun PlayerScreen(
     } else {
         val (s, e) = episode ?: (1 to 1)
         provider.tvUrl(media.id, s, e)
+    }
+
+    val allowedHosts = remember(url) {
+        val host = Uri.parse(url).host?.lowercase().orEmpty()
+        setOf(
+            host,
+            host.removePrefix("www."),
+            "cinesrc.st",
+            "vidlink.pro",
+            "vidfast.pro",
+            "themoviedb.org",
+            "youtube.com",
+            "youtu.be",
+            "vimeo.com",
+            "cloudflare.com",
+            "gstatic.com",
+            "googleapis.com",
+            "jwplayer.com",
+            "jwpcdn.com"
+        )
     }
 
     var pageError by remember { mutableStateOf<String?>(null) }
@@ -89,6 +111,26 @@ fun PlayerScreen(
             delay(3500)
             showChrome = false
         }
+    }
+
+    fun shouldStayInApp(target: String?): Boolean {
+        if (target.isNullOrBlank()) return false
+        if (AdBlocker.isBlockedUrl(target)) return false
+        val lower = target.lowercase()
+        if (!lower.startsWith("http://") && !lower.startsWith("https://")) {
+            return false
+        }
+        val host = Uri.parse(target).host?.lowercase() ?: return false
+        if (AdBlocker.isBlockedHost(host)) return false
+        if (allowedHosts.any { host == it || host.endsWith(".$it") || it in host }) {
+            return true
+        }
+        val streamHints = listOf(
+            "m3u8", "mp4", "hls", "cdn", "stream", "video", "media",
+            "cloudfront", "akamai", "fastly", "bunny", "keycdn"
+        )
+        if (streamHints.any { it in host }) return true
+        return false
     }
 
     Box(
@@ -125,19 +167,19 @@ fun PlayerScreen(
                         domStorageEnabled = true
                         databaseEnabled = true
                         mediaPlaybackRequiresUserGesture = false
-                        javaScriptCanOpenWindowsAutomatically = true
+                        javaScriptCanOpenWindowsAutomatically = false
                         setSupportMultipleWindows(false)
-                        allowFileAccess = true
-                        allowContentAccess = true
-                        mixedContentMode = WebSettings.MIXED_CONTENT_ALWAYS_ALLOW
+                        allowFileAccess = false
+                        allowContentAccess = false
+                        mixedContentMode = WebSettings.MIXED_CONTENT_COMPATIBILITY_MODE
                         loadWithOverviewMode = true
                         useWideViewPort = true
                         builtInZoomControls = false
                         displayZoomControls = false
                         userAgentString =
-                            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) " +
+                            "Mozilla/5.0 (Linux; Android 14; Mobile) " +
                                 "AppleWebKit/537.36 (KHTML, like Gecko) " +
-                                "Chrome/120.0.0.0 Safari/537.36"
+                                "Chrome/120.0.0.0 Mobile Safari/537.36"
                     }
 
                     val cookieManager = CookieManager.getInstance()
@@ -148,7 +190,24 @@ fun PlayerScreen(
                         override fun shouldOverrideUrlLoading(
                             view: WebView,
                             request: WebResourceRequest
-                        ): Boolean = false
+                        ): Boolean {
+                            val target = request.url?.toString() ?: return true
+                            if (!shouldStayInApp(target)) {
+                                return true
+                            }
+                            return false
+                        }
+
+                        override fun shouldInterceptRequest(
+                            view: WebView?,
+                            request: WebResourceRequest?
+                        ): WebResourceResponse? {
+                            val reqUrl = request?.url?.toString()
+                            if (AdBlocker.isBlockedUrl(reqUrl)) {
+                                return AdBlocker.emptyResponse()
+                            }
+                            return super.shouldInterceptRequest(view, request)
+                        }
 
                         override fun onPageStarted(
                             view: WebView?,
@@ -156,6 +215,7 @@ fun PlayerScreen(
                             favicon: Bitmap?
                         ) {
                             pageError = null
+                            view?.evaluateJavascript(AdBlocker.ANTI_POPUP_JS, null)
                         }
 
                         override fun onReceivedError(
@@ -170,6 +230,7 @@ fun PlayerScreen(
 
                         override fun onPageFinished(view: WebView?, finishedUrl: String?) {
                             pageError = null
+                            view?.evaluateJavascript(AdBlocker.ANTI_POPUP_JS, null)
                             view?.evaluateJavascript(
                                 """
                                 (function() {
@@ -180,8 +241,10 @@ fun PlayerScreen(
                                     document.body.style.overflow = 'hidden';
                                     var vids = document.querySelectorAll('video');
                                     for (var i = 0; i < vids.length; i++) {
+                                      vids[i].style.maxWidth = '100%';
+                                      vids[i].style.maxHeight = '100%';
                                       vids[i].style.width = '100%';
-                                      vids[i].style.height = '100%';
+                                      vids[i].style.height = 'auto';
                                       vids[i].style.objectFit = 'contain';
                                       vids[i].setAttribute('playsinline', 'true');
                                       vids[i].setAttribute('webkit-playsinline', 'true');
@@ -198,6 +261,15 @@ fun PlayerScreen(
                         private var customView: View? = null
                         private var customViewCallback: CustomViewCallback? = null
 
+                        override fun onCreateWindow(
+                            view: WebView?,
+                            isDialog: Boolean,
+                            isUserGesture: Boolean,
+                            resultMsg: android.os.Message?
+                        ): Boolean {
+                            return false
+                        }
+
                         override fun onShowCustomView(
                             view: View?,
                             callback: CustomViewCallback?
@@ -210,7 +282,6 @@ fun PlayerScreen(
                             customViewCallback = callback
                             isFullscreenVideo = true
                             showChrome = false
-
                             view?.layoutParams = FrameLayout.LayoutParams(
                                 ViewGroup.LayoutParams.MATCH_PARENT,
                                 ViewGroup.LayoutParams.MATCH_PARENT

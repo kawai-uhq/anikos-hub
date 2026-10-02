@@ -28,6 +28,22 @@ data class Episode(
     val runtime: Int
 )
 
+/** Local continue-watching entry. */
+data class WatchEntry(
+    val media: Media,
+    val season: Int?,
+    val episode: Int?,
+    val providerId: String,
+    val watchedAt: Long
+) {
+    val progressLabel: String
+        get() = when {
+            media.type == "tv" && season != null && episode != null ->
+                "S${season} · E${episode}"
+            else -> "Movie"
+        }
+}
+
 data class Provider(
     val id: String,
     val displayName: String,
@@ -36,18 +52,19 @@ data class Provider(
 )
 
 object Providers {
+    // CineSrc first — most reliable in-app embed for many users
     val all = listOf(
-        Provider(
-            id = "vidlink",
-            displayName = "VidLink",
-            movieUrl = { id -> "https://vidlink.pro/movie/$id" },
-            tvUrl = { id, s, e -> "https://vidlink.pro/tv/$id/$s/$e" }
-        ),
         Provider(
             id = "cinesrc",
             displayName = "CineSrc",
             movieUrl = { id -> "https://cinesrc.st/embed/movie/$id" },
             tvUrl = { id, s, e -> "https://cinesrc.st/embed/tv/$id?s=$s&e=$e" }
+        ),
+        Provider(
+            id = "vidlink",
+            displayName = "VidLink",
+            movieUrl = { id -> "https://vidlink.pro/movie/$id" },
+            tvUrl = { id, s, e -> "https://vidlink.pro/tv/$id/$s/$e" }
         ),
         Provider(
             id = "vidfast",

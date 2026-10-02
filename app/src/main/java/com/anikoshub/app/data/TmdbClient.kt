@@ -57,6 +57,12 @@ class TmdbClient(
         ).toMediaList("all")
     }
 
+    suspend fun recommendations(type: String, id: Int): List<Media> =
+        get("/$type/$id/recommendations?language=en-US&page=1").toMediaList(type)
+
+    suspend fun similar(type: String, id: Int): List<Media> =
+        get("/$type/$id/similar?language=en-US&page=1").toMediaList(type)
+
     suspend fun tvSeasons(id: Int): List<TvSeason> {
         val json = get("/tv/$id?language=en-US")
         val seasons = json.optJSONArray("seasons") ?: return emptyList()

@@ -80,6 +80,12 @@ private fun AnikosHubApp(
                 prefs = prefs,
                 onBack = { selected = null },
                 onPlay = { media, providerId, episode ->
+                    prefs.recordWatch(
+                        media = media,
+                        season = episode?.first,
+                        episode = episode?.second,
+                        providerId = providerId
+                    )
                     player = PlayerRequest(media, providerId, episode)
                 }
             )
