@@ -432,8 +432,20 @@ private fun AnikosHubApp(
     }
 
     LaunchedEffect(Unit) {
-        updateUrl =
-            checkForUpdate(BuildConfig.VERSION_NAME)
+        val currentVersion =
+            try {
+                context.packageManager
+                    .getPackageInfo(
+                        context.packageName,
+                        0
+                    )
+                    .versionName
+                    ?: "0.0.0"
+            } catch (_: Exception) {
+                "0.0.0"
+            }
+
+        updateUrl = checkForUpdate(currentVersion)
     }
 
     MaterialTheme(
