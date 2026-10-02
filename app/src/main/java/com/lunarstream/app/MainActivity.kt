@@ -1,5 +1,12 @@
 package com.anikoshub.app
 
+import android.app.AlertDialog
+import android.os.Build
+import android.widget.Toast
+import androidx.compose.ui.platform.LocalContext
+import kotlinx.coroutines.launch
+import org.json.JSONObject
+import java.net.HttpURLConnection
 import android.annotation.SuppressLint
 import android.content.Intent
 import android.net.Uri
@@ -889,3 +896,76 @@ private fun DetailScreen(
         }
 
         Column
+
+        suspend fun checkForUpdate(
+    currentVersion: String
+): String? = withContext(Dispatchers.IO) {
+
+    try {
+
+        val url = URL(
+            "https://api.github.com/repos/" +
+            "kawai-uhq/anikos-hub/releases/latest"
+        )
+
+        val connection =
+            url.openConnection() as HttpURLConnection
+
+        connection.requestMethod = "GET"
+
+        connection.setRequestProperty(
+            "Accept",
+            "application/vnd.github+json"
+        )
+
+        connection.connectTimeout = 10000
+        connection.readTimeout = 10000
+
+        if (connection.responseCode !in 200..299) {
+            return@withContext null
+        }
+
+        val body =
+            connection.inputStream
+                .bufferedReader()
+                .use {
+                    it.readText()
+                }
+
+        val json = JSONObject(body)
+
+        val latestTag =
+            json.optString("tag_name")
+
+        val latestVersion =
+            latestTag.removePrefix("v")
+
+        if (
+            latestVersion.isNotBlank() &&
+            latestVersion != currentVersion
+        ) {
+
+            val assets =
+                json.optJSONArray("assets")
+
+            if (
+                assets != null &&
+                assets.length() > 0
+            ) {
+
+                val asset =
+                    assets.getJSONObject(0)
+
+                return@withContext asset.optString(
+                    "browser_download_url"
+                )
+            }
+        }
+
+        null
+
+    } catch (e: Exception) {
+
+        null
+    }
+        }
