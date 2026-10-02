@@ -9,12 +9,16 @@ android {
     compileSdk = 35
 
     defaultConfig {
-        applicationId = "com.anikoshub.app"
-        minSdk = 24
-        targetSdk = 35
-        versionCode = 1
-        versionName = "1.0"
-    }
+    applicationId = "com.anikoshub.app"
+    minSdk = 24
+    targetSdk = 35
+
+    versionCode =
+        System.getenv("GITHUB_RUN_NUMBER")?.toIntOrNull() ?: 1
+
+    versionName =
+        "1.0.${System.getenv("GITHUB_RUN_NUMBER") ?: "1"}"
+}
 
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
