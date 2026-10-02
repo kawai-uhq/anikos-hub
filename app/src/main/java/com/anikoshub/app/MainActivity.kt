@@ -5,6 +5,7 @@ import android.net.Uri
 import android.os.Bundle
 import android.widget.Toast
 import androidx.activity.ComponentActivity
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Text
@@ -51,6 +52,14 @@ private fun AnikosHubApp(
     var selected by remember { mutableStateOf<Media?>(null) }
     var player by remember { mutableStateOf<PlayerRequest?>(null) }
     var updateUrl by remember { mutableStateOf<String?>(null) }
+
+    // System back / gesture: exit stream → detail → home (never kill app from player)
+    BackHandler(enabled = player != null || selected != null) {
+        when {
+            player != null -> player = null
+            selected != null -> selected = null
+        }
+    }
 
     LaunchedEffect(Unit) {
         val currentVersion = try {

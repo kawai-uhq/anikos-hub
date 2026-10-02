@@ -362,9 +362,21 @@ fun PlayerScreen(
                 color = Color(0xFFFF6B6B),
                 modifier = Modifier
                     .align(Alignment.BottomCenter)
-                    .padding(16.dp),
+                    .padding(bottom = 72.dp, start = 16.dp, end = 16.dp),
                 fontSize = 13.sp
             )
+        }
+
+        // Always visible — closes stream only, not the whole app
+        TextButton(
+            onClick = onBack,
+            modifier = Modifier
+                .align(Alignment.BottomCenter)
+                .navigationBarsPadding()
+                .padding(bottom = 12.dp)
+                .background(Color(0xCC9B5CFF), shape = androidx.compose.foundation.shape.RoundedCornerShape(24.dp))
+        ) {
+            Text("✕  Exit stream", color = Color.White, fontWeight = FontWeight.Bold)
         }
     }
 }
