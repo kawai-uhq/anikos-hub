@@ -11,6 +11,7 @@ import android.webkit.WebResourceRequest
 import android.webkit.WebSettings
 import android.webkit.WebView
 import android.webkit.WebViewClient
+import android.widget.Toast
 
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -96,6 +97,114 @@ data class Episode(
     val rating: Double,
     val runtime: Int
 )
+
+
+private suspend fun checkForUpdate(
+    currentVersion: String
+): String? = withContext(Dispatchers.IO) {
+    try {
+        val connection =
+            URL(
+                "https://api.github.com/repos/" +
+                    "kawai-uhq/anikos-hub/releases/latest"
+            ).openConnection() as HttpURLConnection
+
+        connection.requestMethod = "GET"
+        connection.setRequestProperty(
+            "Accept",
+            "application/vnd.github+json"
+        )
+        connection.connectTimeout = 10000
+        connection.readTimeout = 10000
+
+        if (connection.responseCode !in 200..299) {
+            connection.disconnect()
+            return@withContext null
+        }
+
+        val body =
+            connection.inputStream
+                .bufferedReader()
+                .use { it.readText() }
+
+        connection.disconnect()
+
+        val json = JSONObject(body)
+
+        val latest =
+            json.optString("tag_name")
+                .removePrefix("v")
+                .trim()
+
+        if (
+            latest.isBlank() ||
+            !isNewerVersion(latest, currentVersion)
+        ) {
+            return@withContext null
+        }
+
+        val assets =
+            json.optJSONArray("assets")
+                ?: return@withContext null
+
+        for (i in 0 until assets.length()) {
+            val asset =
+                assets.optJSONObject(i)
+                    ?: continue
+
+            if (
+                asset.optString("name")
+                    .equals(
+                        "Anikos-Hub.apk",
+                        ignoreCase = true
+                    )
+            ) {
+                return@withContext asset
+                    .optString("browser_download_url")
+                    .ifBlank { null }
+            }
+        }
+
+        null
+    } catch (_: Exception) {
+        null
+    }
+}
+
+private fun isNewerVersion(
+    latest: String,
+    current: String
+): Boolean {
+
+    fun parts(value: String): List<Int> {
+        val values =
+            value
+                .removePrefix("v")
+                .split(".")
+                .map {
+                    it.takeWhile { ch ->
+                        ch.isDigit()
+                    }.toIntOrNull() ?: 0
+                }
+
+        return listOf(
+            values.getOrElse(0) { 0 },
+            values.getOrElse(1) { 0 },
+            values.getOrElse(2) { 0 }
+        )
+    }
+
+    val a = parts(latest)
+    val b = parts(current)
+
+    for (i in 0..2) {
+        if (a[i] != b[i]) {
+            return a[i] > b[i]
+        }
+    }
+
+    return false
+}
 
 class TmdbClient(
     private val tokenProvider: () -> String
@@ -308,12 +417,23 @@ private fun AnikosHubApp(
     prefs: android.content.SharedPreferences
 ) {
 
+    val context = LocalContext.current
+
     var tab by remember { mutableIntStateOf(0) }
     var selected by remember { mutableStateOf<Media?>(null) }
     var player by remember {
         mutableStateOf<
             Triple<Media, String, Pair<Int, Int>?>?
         >(null)
+    }
+
+    var updateUrl by remember {
+        mutableStateOf<String?>(null)
+    }
+
+    LaunchedEffect(Unit) {
+        updateUrl =
+            checkForUpdate(BuildConfig.VERSION_NAME)
     }
 
     MaterialTheme(
@@ -323,6 +443,55 @@ private fun AnikosHubApp(
             surface = Card
         )
     ) {
+
+        if (updateUrl != null) {
+            AlertDialog(
+                onDismissRequest = {
+                    updateUrl = null
+                },
+                title = {
+                    Text("Update available")
+                },
+                text = {
+                    Text(
+                        "A newer version of Aniko's Hub is available."
+                    )
+                },
+                confirmButton = {
+                    TextButton(
+                        onClick = {
+                            try {
+                                context.startActivity(
+                                    Intent(
+                                        Intent.ACTION_VIEW,
+                                        Uri.parse(updateUrl)
+                                    )
+                                )
+                            } catch (_: Exception) {
+                                Toast.makeText(
+                                    context,
+                                    "Unable to open the update.",
+                                    Toast.LENGTH_LONG
+                                ).show()
+                            }
+
+                            updateUrl = null
+                        }
+                    ) {
+                        Text("UPDATE")
+                    }
+                },
+                dismissButton = {
+                    TextButton(
+                        onClick = {
+                            updateUrl = null
+                        }
+                    ) {
+                        Text("LATER")
+                    }
+                }
+            )
+        }
 
         when {
             player != null -> {
