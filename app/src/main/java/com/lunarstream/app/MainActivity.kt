@@ -131,8 +131,6 @@ class TmdbClient(private val tokenProvider: () -> String) {
     }
 }
 
-private object LaunchedEffectKey { fun launch(client:TmdbClient,q:String){} }
-
 @Composable private fun SearchResults(client:TmdbClient,q:String,open:(Media)->Unit) {
     var results by remember { mutableStateOf<List<Media>>(emptyList()) }
     var loading by remember { mutableStateOf(false) }
