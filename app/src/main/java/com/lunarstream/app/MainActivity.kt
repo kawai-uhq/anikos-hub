@@ -114,7 +114,13 @@ class TmdbClient(private val tokenProvider: () -> String) {
             Spacer(Modifier.height(12.dp))
             if(tab==3) SettingsScreen(prefs)
             else if(tab==1) {
-                OutlinedTextField(query,{query=it; if(it.length>=2) { LaunchedEffectKey.launch(client, query) { } }},modifier=Modifier.fillMaxWidth(),placeholder={Text("Search movies & shows")},singleLine=true)
+                OutlinedTextField(
+    value = query,
+    onValueChange = { query = it },
+    modifier = Modifier.fillMaxWidth(),
+    placeholder = { Text("Search movies & shows") },
+    singleLine = true
+)
                 Spacer(Modifier.height(12.dp)); SearchResults(client,query,open)
             } else {
                 if(error!=null) Text(error!!,color=Color.Red)
