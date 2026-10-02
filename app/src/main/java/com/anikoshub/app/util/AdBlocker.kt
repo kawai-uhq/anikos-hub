@@ -89,7 +89,9 @@ object AdBlocker {
         if (host.isNullOrBlank()) return false
         val h = host.lowercase()
         return blockedHosts.any { pattern ->
-            h == pattern || h.endsWith(".$pattern") || h.contains(pattern)
+            val p = pattern.lowercase().trim('.')
+            // Prefer exact / suffix match so stream CDNs are not blocked by short substrings
+            h == p || h.endsWith(".$p") || h.startsWith("$p.")
         }
     }
 

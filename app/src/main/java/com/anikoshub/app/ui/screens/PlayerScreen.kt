@@ -24,6 +24,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.*
@@ -63,26 +64,6 @@ fun PlayerScreen(
         provider.tvUrl(media.id, s, e)
     }
 
-    val allowedHosts = remember(url) {
-        val host = Uri.parse(url).host?.lowercase().orEmpty()
-        setOf(
-            host,
-            host.removePrefix("www."),
-            "cinesrc.st",
-            "vidlink.pro",
-            "vidfast.pro",
-            "themoviedb.org",
-            "youtube.com",
-            "youtu.be",
-            "vimeo.com",
-            "cloudflare.com",
-            "gstatic.com",
-            "googleapis.com",
-            "jwplayer.com",
-            "jwpcdn.com"
-        )
-    }
-
     var pageError by remember { mutableStateOf<String?>(null) }
     var webViewRef by remember { mutableStateOf<WebView?>(null) }
     var showChrome by remember { mutableStateOf(true) }
@@ -106,31 +87,12 @@ fun PlayerScreen(
         }
     }
 
+    // Tap screen → show controls; auto-hide after a few seconds
     LaunchedEffect(showChrome, isFullscreenVideo) {
         if (showChrome && !isFullscreenVideo) {
-            delay(3500)
+            delay(4000)
             showChrome = false
         }
-    }
-
-    fun shouldStayInApp(target: String?): Boolean {
-        if (target.isNullOrBlank()) return false
-        if (AdBlocker.isBlockedUrl(target)) return false
-        val lower = target.lowercase()
-        if (!lower.startsWith("http://") && !lower.startsWith("https://")) {
-            return false
-        }
-        val host = Uri.parse(target).host?.lowercase() ?: return false
-        if (AdBlocker.isBlockedHost(host)) return false
-        if (allowedHosts.any { host == it || host.endsWith(".$it") || it in host }) {
-            return true
-        }
-        val streamHints = listOf(
-            "m3u8", "mp4", "hls", "cdn", "stream", "video", "media",
-            "cloudfront", "akamai", "fastly", "bunny", "keycdn"
-        )
-        if (streamHints.any { it in host }) return true
-        return false
     }
 
     Box(
@@ -169,17 +131,18 @@ fun PlayerScreen(
                         mediaPlaybackRequiresUserGesture = false
                         javaScriptCanOpenWindowsAutomatically = false
                         setSupportMultipleWindows(false)
-                        allowFileAccess = false
-                        allowContentAccess = false
-                        mixedContentMode = WebSettings.MIXED_CONTENT_COMPATIBILITY_MODE
+                        allowFileAccess = true
+                        allowContentAccess = true
+                        mixedContentMode = WebSettings.MIXED_CONTENT_ALWAYS_ALLOW
                         loadWithOverviewMode = true
                         useWideViewPort = true
                         builtInZoomControls = false
                         displayZoomControls = false
+                        // Desktop UA — VidLink / VidFast embeds work more reliably
                         userAgentString =
-                            "Mozilla/5.0 (Linux; Android 14; Mobile) " +
+                            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) " +
                                 "AppleWebKit/537.36 (KHTML, like Gecko) " +
-                                "Chrome/120.0.0.0 Mobile Safari/537.36"
+                                "Chrome/121.0.0.0 Safari/537.36"
                     }
 
                     val cookieManager = CookieManager.getInstance()
@@ -192,9 +155,19 @@ fun PlayerScreen(
                             request: WebResourceRequest
                         ): Boolean {
                             val target = request.url?.toString() ?: return true
-                            if (!shouldStayInApp(target)) {
+                            val lower = target.lowercase()
+
+                            // Block leaving the app via external schemes
+                            if (!lower.startsWith("http://") && !lower.startsWith("https://")) {
                                 return true
                             }
+
+                            // Block pure ad landing hosts from navigating the main frame
+                            if (request.isForMainFrame && AdBlocker.isBlockedHost(request.url?.host)) {
+                                return true
+                            }
+
+                            // All other https — stay inside WebView (needed for stream CDNs)
                             return false
                         }
 
@@ -202,8 +175,9 @@ fun PlayerScreen(
                             view: WebView?,
                             request: WebResourceRequest?
                         ): WebResourceResponse? {
-                            val reqUrl = request?.url?.toString()
-                            if (AdBlocker.isBlockedUrl(reqUrl)) {
+                            val host = request?.url?.host
+                            // Only block well-known ad/tracker hosts — do NOT block unknown CDNs
+                            if (AdBlocker.isBlockedHost(host)) {
                                 return AdBlocker.emptyResponse()
                             }
                             return super.shouldInterceptRequest(view, request)
@@ -238,16 +212,12 @@ fun PlayerScreen(
                                     document.documentElement.style.background = '#000';
                                     document.body.style.background = '#000';
                                     document.body.style.margin = '0';
-                                    document.body.style.overflow = 'hidden';
                                     var vids = document.querySelectorAll('video');
                                     for (var i = 0; i < vids.length; i++) {
-                                      vids[i].style.maxWidth = '100%';
-                                      vids[i].style.maxHeight = '100%';
-                                      vids[i].style.width = '100%';
-                                      vids[i].style.height = 'auto';
-                                      vids[i].style.objectFit = 'contain';
                                       vids[i].setAttribute('playsinline', 'true');
                                       vids[i].setAttribute('webkit-playsinline', 'true');
+                                      vids[i].style.maxWidth = '100%';
+                                      vids[i].style.maxHeight = '100%';
                                     }
                                   } catch (e) {}
                                 })();
@@ -267,6 +237,7 @@ fun PlayerScreen(
                             isUserGesture: Boolean,
                             resultMsg: android.os.Message?
                         ): Boolean {
+                            // Kill popup windows (ads), but don't block in-page video
                             return false
                         }
 
@@ -314,6 +285,7 @@ fun PlayerScreen(
             update = { }
         )
 
+        // Top controls: Exit (top-left) + title + Reload / Browser — tap screen to show
         AnimatedVisibility(
             visible = showChrome && !isFullscreenVideo,
             enter = fadeIn(),
@@ -325,24 +297,32 @@ fun PlayerScreen(
                     .fillMaxWidth()
                     .background(Color(0xCC101014))
                     .statusBarsPadding()
-                    .padding(horizontal = 4.dp, vertical = 4.dp),
+                    .padding(horizontal = 6.dp, vertical = 6.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
+                // Exit stream — top left
                 Text(
-                    "‹",
-                    fontSize = 34.sp,
+                    "✕ Exit",
                     color = Color.White,
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 14.sp,
                     modifier = Modifier
+                        .background(Color(0xFF9B5CFF), RoundedCornerShape(20.dp))
                         .clickable(onClick = onBack)
-                        .padding(horizontal = 10.dp, vertical = 4.dp)
+                        .padding(horizontal = 14.dp, vertical = 8.dp)
                 )
+
+                Spacer(Modifier.width(10.dp))
+
                 Text(
                     media.title,
                     color = Color.White,
                     fontWeight = FontWeight.Bold,
                     modifier = Modifier.weight(1f),
-                    maxLines = 1
+                    maxLines = 1,
+                    fontSize = 14.sp
                 )
+
                 TextButton(onClick = { webViewRef?.reload() }) {
                     Text("Reload", color = Purple)
                 }
@@ -362,21 +342,9 @@ fun PlayerScreen(
                 color = Color(0xFFFF6B6B),
                 modifier = Modifier
                     .align(Alignment.BottomCenter)
-                    .padding(bottom = 72.dp, start = 16.dp, end = 16.dp),
+                    .padding(16.dp),
                 fontSize = 13.sp
             )
-        }
-
-        // Always visible — closes stream only, not the whole app
-        TextButton(
-            onClick = onBack,
-            modifier = Modifier
-                .align(Alignment.BottomCenter)
-                .navigationBarsPadding()
-                .padding(bottom = 12.dp)
-                .background(Color(0xCC9B5CFF), shape = androidx.compose.foundation.shape.RoundedCornerShape(24.dp))
-        ) {
-            Text("✕  Exit stream", color = Color.White, fontWeight = FontWeight.Bold)
         }
     }
 }
